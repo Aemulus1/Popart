@@ -80,7 +80,39 @@ function lum(r,g,b,c=1){return Math.max(0,Math.min(255,((.299*r+.587*g+.114*b)-1
 function hex(h){h=h.replace('#','');if(h.length===3)h=[...h].map(x=>x+x).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]}
 function pixels(p,levels,c,outline){const im=sourceData(),a=im.data,cols=p.map(hex);for(let i=0;i<a.length;i+=4){const l=lum(a[i],a[i+1],a[i+2],c),idx=Math.min(cols.length-1,Math.floor((255-l)/256*Math.min(levels,cols.length))),q=cols[idx];a[i]=q[0];a[i+1]=q[1];a[i+2]=q[2]}ctx.putImageData(im,0,0)}
 function halftone(p,d,c){const src=sourceData();ctx.fillStyle=p[4]||'#fff';ctx.fillRect(0,0,canvas.width,canvas.height);for(let y=0;y<canvas.height;y+=d)for(let x=0;x<canvas.width;x+=d){const i=(Math.min(canvas.height-1,y)*canvas.width+Math.min(canvas.width-1,x))*4,l=lum(src.data[i],src.data[i+1],src.data[i+2],c),r=(1-l/255)*d*.68;if(r>.35){ctx.fillStyle=l<85?p[5]:l<170?p[0]:p[2];ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill()}}}
-function comic(p,d,levels,c,s){const original=sourceData(),o=original.data,w=canvas.width,h=canvas.height,a=new Uint8ClampedArray(o.length),ink=hex(p[5]).map(v=>Math.round(v*.32)),dotInk=hex(p[0]).map(v=>Math.round(v*.42)),bands=Math.max(2,Math.min(8,Math.round(levels)));for(let i=0;i<o.length;i+=4){const r=o[i],g=o[i+1],b=o[i+2],rawL=.299*r+.587*g+.114*b,adjusted=lum(r,g,b,c),quant=Math.round(adjusted/255*(bands-1))*255/(bands-1),delta=(quant-rawL)*s;let rr=r+delta,gg=g+delta,bb=b+delta,mid=(rr+gg+bb)/3,sat=1+.16*s;rr=mid+(rr-mid)*sat;gg=mid+(gg-mid)*sat;bb=mid+(bb-mid)*sat;const skin=r>70&&g>35&&b>15&&r>g*1.04&&r>b*1.12&&(Math.max(r,g,b)-Math.min(r,g,b)>18);if(skin){rr+=(255-rr)*.08*s;gg+=(238-gg)*.03*s;bb*=1-.2*s}a[i]=rr;a[i+1]=gg;a[i+2]=bb;a[i+3]=o[i+3]}for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=(y*w+x)*4,l=lum(o[i],o[i+1],o[i+2],c),lr=lum(o[i+4],o[i+5],o[i+6],c),ld=lum(o[i+w*4],o[i+w*4+1],o[i+w*4+2],c);if(Math.abs(l-lr)+Math.abs(l-ld)>55-(s*25)){a[i]=ink[0];a[i+1]=ink[1];a[i+2]=ink[2]}}ctx.putImageData(new ImageData(a,w,h),0,0);const dots=document.createElement('canvas');dots.width=w;dots.height=h;const dc=dots.getContext('2d');dc.fillStyle='#fff';dc.fillRect(0,0,w,h);const phaseX=Math.floor(variantPhaseX*d*2),phaseY=Math.floor(variantPhaseY*d*2);for(let yy=phaseY;yy<h;yy+=d*2)for(let xx=phaseX;xx<w;xx+=d*2){const ii=(Math.min(h-1,yy)*w+Math.min(w-1,xx))*4,ll=lum(o[ii],o[ii+1],o[ii+2],c),rr=(1-ll/255)*d*.58;if(rr>.5){dc.fillStyle=`rgb(${dotInk[0]},${dotInk[1]},${dotInk[2]})`;dc.beginPath();dc.arc(xx,yy,rr,0,Math.PI*2);dc.fill()}}ctx.globalCompositeOperation='multiply';ctx.globalAlpha=.07+s*.14;ctx.drawImage(dots,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over'}
+function comic(p,d,levels,c,s){
+const w=canvas.width,h=canvas.height,soft=document.createElement('canvas');soft.width=w;soft.height=h;
+const sc=soft.getContext('2d');sc.filter=`blur(${(.25+s*1.15).toFixed(2)}px)`;sc.drawImage(canvas,0,0);sc.filter='none';
+const o=sc.getImageData(0,0,w,h).data,a=new Uint8ClampedArray(o.length),ink=hex(p[5]).map(v=>Math.round(v*.28)),dotInk=hex(p[0]).map(v=>Math.round(v*.42)),bands=Math.max(2,Math.min(8,Math.round(levels))),lumMap=new Float32Array(w*h);
+for(let i=0,k=0;i<o.length;i+=4,k++){
+ const r=o[i],g=o[i+1],b=o[i+2],rawL=.299*r+.587*g+.114*b,adjusted=lum(r,g,b,c),step=255/(bands-1),quant=Math.round(adjusted/step)*step,delta=(quant-rawL)*s;
+ let rr=r+delta,gg=g+delta,bb=b+delta,mid=(rr+gg+bb)/3,sat=1+.16*s;
+ rr=mid+(rr-mid)*sat;gg=mid+(gg-mid)*sat;bb=mid+(bb-mid)*sat;
+ const skin=r>70&&g>35&&b>15&&r>g*1.04&&r>b*1.12&&(Math.max(r,g,b)-Math.min(r,g,b)>18);
+ if(skin){rr+=(255-rr)*.08*s;gg+=(238-gg)*.03*s;bb*=1-.2*s}
+ a[i]=rr;a[i+1]=gg;a[i+2]=bb;a[i+3]=o[i+3];lumMap[k]=adjusted;
+}
+const edges=new Uint8Array(w*h),threshold=220-100*s;
+for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+ const i=y*w+x,tl=lumMap[i-w-1],tc=lumMap[i-w],tr=lumMap[i-w+1],ml=lumMap[i-1],mr=lumMap[i+1],bl=lumMap[i+w-1],bc=lumMap[i+w],br=lumMap[i+w+1];
+ const gx=-tl+tr-2*ml+2*mr-bl+br,gy=-tl-2*tc-tr+bl+2*bc+br;
+ if(Math.abs(gx)+Math.abs(gy)>threshold)edges[i]=1;
+}
+const radius=Math.round(s*1.5);
+for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++)if(edges[y*w+x]){
+ for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+  const j=((y+dy)*w+x+dx)*4;a[j]=ink[0];a[j+1]=ink[1];a[j+2]=ink[2];
+ }
+}
+ctx.putImageData(new ImageData(a,w,h),0,0);
+const dots=document.createElement('canvas');dots.width=w;dots.height=h;const dc=dots.getContext('2d');dc.fillStyle='#fff';dc.fillRect(0,0,w,h);
+const phaseX=Math.floor(variantPhaseX*d*2),phaseY=Math.floor(variantPhaseY*d*2);
+for(let yy=phaseY;yy<h;yy+=d*2)for(let xx=phaseX;xx<w;xx+=d*2){
+ const i=Math.min(h-1,yy)*w+Math.min(w-1,xx),l=lumMap[i],r=(1-l/255)*d*.55;
+ if(l<205&&r>.8){dc.fillStyle=`rgb(${dotInk[0]},${dotInk[1]},${dotInk[2]})`;dc.beginPath();dc.arc(xx,yy,r,0,Math.PI*2);dc.fill()}
+}
+ctx.globalCompositeOperation='multiply';ctx.globalAlpha=.04+s*.18;ctx.drawImage(dots,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over'
+}
 function imageFromData(data){const c=document.createElement('canvas');c.width=data.width;c.height=data.height;c.getContext('2d').putImageData(data,0,0);return c}
 function warhol(p,levels,c){const temp=document.createElement('canvas');temp.width=600;temp.height=450;const t=temp.getContext('2d');t.drawImage(canvas,0,0,600,450);const raw=t.getImageData(0,0,600,450);ctx.fillStyle='#111';ctx.fillRect(0,0,1200,900);const count=Math.max(2,Math.min(8,Math.round(levels)));for(let n=0;n<4;n++){t.putImageData(raw,0,0);const im=t.getImageData(0,0,600,450),a=im.data,all=[p[(n+1)%p.length],p[(n+3)%p.length],p[(n+4)%p.length],p[5],p[n%p.length],p[(n+2)%p.length]].map(hex);for(let i=0;i<a.length;i+=4){const l=lum(a[i],a[i+1],a[i+2],c),band=Math.min(count-1,Math.floor((255-l)/256*count)),idx=Math.min(all.length-1,Math.floor(band*all.length/count)),q=all[idx];a[i]=q[0];a[i+1]=q[1];a[i+2]=q[2]}t.putImageData(im,0,0);ctx.drawImage(temp,(n%2)*600,Math.floor(n/2)*450)}ctx.strokeStyle='#111';ctx.lineWidth=12;ctx.strokeRect(0,0,1200,900);ctx.beginPath();ctx.moveTo(600,0);ctx.lineTo(600,900);ctx.moveTo(0,450);ctx.lineTo(1200,450);ctx.stroke()}
 function bubble(text,p){ctx.save();ctx.translate(820,170);ctx.rotate(-.12);ctx.fillStyle='#fff';ctx.strokeStyle='#111';ctx.lineWidth=14;ctx.beginPath();for(let i=0;i<16;i++){const a=i/16*Math.PI*2,r=i%2?145:190,x=Math.cos(a)*r,y=Math.sin(a)*r*.65;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle=p[0];ctx.strokeStyle='#111';ctx.lineWidth=8;ctx.textAlign='center';ctx.textBaseline='middle';let size=Math.max(45,Math.min(105,620/text.length));ctx.font=`${size}px Impact`;ctx.strokeText(text.toUpperCase(),0,0,330);ctx.fillText(text.toUpperCase(),0,0,330);ctx.restore()}
