@@ -81,37 +81,36 @@ function hex(h){h=h.replace('#','');if(h.length===3)h=[...h].map(x=>x+x).join(''
 function pixels(p,levels,c,outline){const im=sourceData(),a=im.data,cols=p.map(hex);for(let i=0;i<a.length;i+=4){const l=lum(a[i],a[i+1],a[i+2],c),idx=Math.min(cols.length-1,Math.floor((255-l)/256*Math.min(levels,cols.length))),q=cols[idx];a[i]=q[0];a[i+1]=q[1];a[i+2]=q[2]}ctx.putImageData(im,0,0)}
 function halftone(p,d,c){const src=sourceData();ctx.fillStyle=p[4]||'#fff';ctx.fillRect(0,0,canvas.width,canvas.height);for(let y=0;y<canvas.height;y+=d)for(let x=0;x<canvas.width;x+=d){const i=(Math.min(canvas.height-1,y)*canvas.width+Math.min(canvas.width-1,x))*4,l=lum(src.data[i],src.data[i+1],src.data[i+2],c),r=(1-l/255)*d*.68;if(r>.35){ctx.fillStyle=l<85?p[5]:l<170?p[0]:p[2];ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill()}}}
 function comic(p,d,levels,c,s){
-const w=canvas.width,h=canvas.height,soft=document.createElement('canvas');soft.width=w;soft.height=h;
-const sc=soft.getContext('2d');sc.filter=`blur(${(.25+s*1.15).toFixed(2)}px)`;sc.drawImage(canvas,0,0);sc.filter='none';
-const o=sc.getImageData(0,0,w,h).data,a=new Uint8ClampedArray(o.length),ink=hex(p[5]).map(v=>Math.round(v*.28)),dotInk=hex(p[0]).map(v=>Math.round(v*.42)),bands=Math.max(2,Math.min(8,Math.round(levels))),lumMap=new Float32Array(w*h);
-for(let i=0,k=0;i<o.length;i+=4,k++){
- const r=o[i],g=o[i+1],b=o[i+2],rawL=.299*r+.587*g+.114*b,adjusted=lum(r,g,b,c),step=255/(bands-1),quant=Math.round(adjusted/step)*step,delta=(quant-rawL)*s;
- let rr=r+delta,gg=g+delta,bb=b+delta,mid=(rr+gg+bb)/3,sat=1+.16*s;
- rr=mid+(rr-mid)*sat;gg=mid+(gg-mid)*sat;bb=mid+(bb-mid)*sat;
- const skin=r>70&&g>35&&b>15&&r>g*1.04&&r>b*1.12&&(Math.max(r,g,b)-Math.min(r,g,b)>18);
- if(skin){rr+=(255-rr)*.08*s;gg+=(238-gg)*.03*s;bb*=1-.2*s}
- a[i]=rr;a[i+1]=gg;a[i+2]=bb;a[i+3]=o[i+3];lumMap[k]=adjusted;
-}
-const edges=new Uint8Array(w*h),threshold=220-100*s;
+// Eerst een vereenvoudigde contourkaart uit het beeld halen.
+const w=600,h=450,work=document.createElement('canvas');work.width=w;work.height=h;
+const wc=work.getContext('2d');wc.filter=`blur(${(1.1+s*.8).toFixed(2)}px)`;wc.drawImage(canvas,0,0,w,h);wc.filter='none';
+const source=wc.getImageData(0,0,w,h).data,lumaMap=new Float32Array(w*h),edges=new Uint8Array(w*h),threshold=260-105*s;
+for(let i=0,k=0;i<source.length;i+=4,k++)lumaMap[k]=lum(source[i],source[i+1],source[i+2],c);
 for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
- const i=y*w+x,tl=lumMap[i-w-1],tc=lumMap[i-w],tr=lumMap[i-w+1],ml=lumMap[i-1],mr=lumMap[i+1],bl=lumMap[i+w-1],bc=lumMap[i+w],br=lumMap[i+w+1];
+ const i=y*w+x,tl=lumaMap[i-w-1],tc=lumaMap[i-w],tr=lumaMap[i-w+1],ml=lumaMap[i-1],mr=lumaMap[i+1],bl=lumaMap[i+w-1],bc=lumaMap[i+w],br=lumaMap[i+w+1];
  const gx=-tl+tr-2*ml+2*mr-bl+br,gy=-tl-2*tc-tr+bl+2*bc+br;
  if(Math.abs(gx)+Math.abs(gy)>threshold)edges[i]=1;
 }
-const radius=Math.round(s*1.5);
-for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++)if(edges[y*w+x]){
- for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
-  const j=((y+dy)*w+x+dx)*4;a[j]=ink[0];a[j+1]=ink[1];a[j+2]=ink[2];
- }
+// Losse ruispuntjes weggooien zodat vooral doorlopende vormlijnen overblijven.
+const cleanEdges=new Uint8Array(edges);
+for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const i=y*w+x;if(!edges[i])continue;let neighbours=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if((dx||dy)&&edges[(y+dy)*w+x+dx])neighbours++;if(neighbours<2)cleanEdges[i]=0}
+// Daarna de foto vervangen door egale, beperkte kleurvlakken.
+const fills=new Uint8ClampedArray(source.length),levelsIn=Math.max(2,Math.min(8,Math.round(levels))),steps=3+Math.round((levelsIn-2)*.35),step=255/(steps-1),ink=hex(p[5]).map(v=>Math.round(v*.22)),skinPalette=[[139,64,44],[203,111,62],[241,161,101],[255,213,157]],skinMix=.78*s;
+for(let i=0,k=0;i<source.length;i+=4,k++){
+ const r=source[i],g=source[i+1],b=source[i+2],l=lum(r,g,b,c),skin=r>70&&g>35&&b>15&&r>g*1.04&&r>b*1.12&&(Math.max(r,g,b)-Math.min(r,g,b)>18);
+ const qr=Math.round(Math.max(0,Math.min(255,(r-128)*c+128))/step)*step,qg=Math.round(Math.max(0,Math.min(255,(g-128)*c+128))/step)*step,qb=Math.round(Math.max(0,Math.min(255,(b-128)*c+128))/step)*step;
+ if(skin){const tone=l<65?0:l<125?1:l<190?2:3,t=skinPalette[tone];fills[i]=qr*(1-skinMix)+t[0]*skinMix;fills[i+1]=qg*(1-skinMix)+t[1]*skinMix;fills[i+2]=qb*(1-skinMix)+t[2]*skinMix}else{fills[i]=qr;fills[i+1]=qg;fills[i+2]=qb}
+ fills[i+3]=source[i+3];
 }
-ctx.putImageData(new ImageData(a,w,h),0,0);
-const dots=document.createElement('canvas');dots.width=w;dots.height=h;const dc=dots.getContext('2d');dc.fillStyle='#fff';dc.fillRect(0,0,w,h);
-const phaseX=Math.floor(variantPhaseX*d*2),phaseY=Math.floor(variantPhaseY*d*2);
-for(let yy=phaseY;yy<h;yy+=d*2)for(let xx=phaseX;xx<w;xx+=d*2){
- const i=Math.min(h-1,yy)*w+Math.min(w-1,xx),l=lumMap[i],r=(1-l/255)*d*.55;
- if(l<205&&r>.8){dc.fillStyle=`rgb(${dotInk[0]},${dotInk[1]},${dotInk[2]})`;dc.beginPath();dc.arc(xx,yy,r,0,Math.PI*2);dc.fill()}
-}
-ctx.globalCompositeOperation='multiply';ctx.globalAlpha=.04+s*.18;ctx.drawImage(dots,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over'
+// Omlijningen boven op de vlakke inkleuring zetten.
+const radius=Math.round(s);
+for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++)if(cleanEdges[y*w+x])for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){const j=((y+dy)*w+x+dx)*4;fills[j]=ink[0];fills[j+1]=ink[1];fills[j+2]=ink[2]}
+const flat=document.createElement('canvas');flat.width=w;flat.height=h;flat.getContext('2d').putImageData(new ImageData(fills,w,h),0,0);
+ctx.clearRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=true;ctx.drawImage(flat,0,0,canvas.width,canvas.height);
+// Een lichte drukrasterlaag blijft alleen in schaduwpartijen.
+const dots=document.createElement('canvas');dots.width=canvas.width;dots.height=canvas.height;const dc=dots.getContext('2d'),dotInk=hex(p[0]).map(v=>Math.round(v*.42)),dotStep=Math.max(3,Math.round(d/2)),phaseX=Math.floor(variantPhaseX*dotStep),phaseY=Math.floor(variantPhaseY*dotStep);
+for(let y=phaseY;y<h;y+=dotStep)for(let x=phaseX;x<w;x+=dotStep){const i=y*w+x,l=lumaMap[i],r=(1-l/255)*dotStep*.48;if(l<185&&r>.7){dc.fillStyle=`rgb(${dotInk[0]},${dotInk[1]},${dotInk[2]})`;dc.beginPath();dc.arc(x*canvas.width/w,y*canvas.height/h,r*canvas.width/w,0,Math.PI*2);dc.fill()}}
+ctx.globalCompositeOperation='multiply';ctx.globalAlpha=.08+s*.1;ctx.drawImage(dots,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over'
 }
 function imageFromData(data){const c=document.createElement('canvas');c.width=data.width;c.height=data.height;c.getContext('2d').putImageData(data,0,0);return c}
 function warhol(p,levels,c){const temp=document.createElement('canvas');temp.width=600;temp.height=450;const t=temp.getContext('2d');t.drawImage(canvas,0,0,600,450);const raw=t.getImageData(0,0,600,450);ctx.fillStyle='#111';ctx.fillRect(0,0,1200,900);const count=Math.max(2,Math.min(8,Math.round(levels)));for(let n=0;n<4;n++){t.putImageData(raw,0,0);const im=t.getImageData(0,0,600,450),a=im.data,all=[p[(n+1)%p.length],p[(n+3)%p.length],p[(n+4)%p.length],p[5],p[n%p.length],p[(n+2)%p.length]].map(hex);for(let i=0;i<a.length;i+=4){const l=lum(a[i],a[i+1],a[i+2],c),band=Math.min(count-1,Math.floor((255-l)/256*count)),idx=Math.min(all.length-1,Math.floor(band*all.length/count)),q=all[idx];a[i]=q[0];a[i+1]=q[1];a[i+2]=q[2]}t.putImageData(im,0,0);ctx.drawImage(temp,(n%2)*600,Math.floor(n/2)*450)}ctx.strokeStyle='#111';ctx.lineWidth=12;ctx.strokeRect(0,0,1200,900);ctx.beginPath();ctx.moveTo(600,0);ctx.lineTo(600,900);ctx.moveTo(0,450);ctx.lineTo(1200,450);ctx.stroke()}
