@@ -57,22 +57,21 @@ const palettes={classic:['#ff2d91','#ffd400','#00d9ff','#2357ff','#fff7e8','#111
 ['strength','contrast','dot','levels'].forEach(k=>els[k].addEventListener('input',e=>{$('#'+k+'Out').value=e.target.value;if(els.live.checked&&img) render()}));
 ['caption','palette','bubble'].forEach(k=>els[k].addEventListener(k==='caption'?'input':'change',()=>{if(els.live.checked&&img)render()}));
 $('#modes').addEventListener('click',e=>{const b=e.target.closest('.mode');if(!b)return;document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;if(img)render()});
-els.drop.onclick=()=>els.file.click();els.file.onchange=e=>loadFile(e.target.files[0]);
+els.file.addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f)loadFile(f);});
 ['dragenter','dragover'].forEach(n=>els.drop.addEventListener(n,e=>{e.preventDefault();els.drop.classList.add('drag')}));['dragleave','drop'].forEach(n=>els.drop.addEventListener(n,e=>{e.preventDefault();els.drop.classList.remove('drag')}));els.drop.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));
-function loadFile(f){if(!f||!f.type.startsWith('image/')){status('Kies een geldige afbeelding.');return}if(f.size>20*1024*1024){status('Afbeelding is groter dan 20 MB. Kies een kleiner bestand.');return}const u=URL.createObjectURL(f),im=new Image();im.onload=()=>{img=im;URL.revokeObjectURL(u);els.empty.hidden=true;status('Beeld geladen. De machine is klaar!');render()};im.onerror=()=>status('Deze afbeelding kon niet worden gelezen.');im.src=u}
-function status(t){els.status.textContent=t}
-function base(){
-  const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
-  const maxSide=1400, sc=Math.min(1,maxSide/Math.max(iw,ih));
-  const w=Math.max(1,Math.round(iw*sc)), h=Math.max(1,Math.round(ih*sc));
-  canvas.width=w; canvas.height=h;
-  const frame=canvas.closest('.frame');
-  if(frame) frame.style.aspectRatio=w+' / '+h;
-  ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
-  ctx.drawImage(img,0,0,w,h);
+function loadFile(f){
+if(!f||!/^image\//i.test(f.type)){status('Kies een geldige JPG, PNG of WEBP-afbeelding.');return}
+if(f.size>20*1024*1024){status('Afbeelding is groter dan 20 MB. Kies een kleiner bestand.');return}
+status('Afbeelding wordt ingelezen…');
+const reader=new FileReader();
+reader.onerror=()=>status('Het afbeeldingsbestand kon niet worden gelezen.');
+reader.onload=()=>{const im=new Image();im.onload=()=>{img=im;els.empty.style.display='none';status('Beeld geladen. De machine is klaar!');render();els.file.value=''};im.onerror=()=>status('Deze afbeelding kon niet worden geopend. Gebruik JPG, PNG of WEBP.');im.src=reader.result};
+reader.readAsDataURL(f)
 }
-function palette(){if(els.palette.value==='random')return Array.from({length:6},()=>`hsl(${Math.random()*360} 90% 55%)`);return palettes[els.palette.value]}
-function render(){if(!img||working)return;working=true;status('RATATATA… beeld wordt verwerkt.');requestAnimationFrame(()=>{base();const p=palette(),s=+els.strength.value/100,c=+els.contrast.value/100,lev=+els.levels.value,d=+els.dot.value;if(mode==='warhol')warhol(p,lev,c);else if(mode==='halftone')halftone(p,d,c);else if(mode==='poster')pixels(p,lev,c,false);else if(mode==='duotone')pixels([p[5],p[0],p[2]],3,c,false);else if(mode==='cmyk')cmyk(Math.round(20*s),c);else comic(p,d,lev,c,s);if(els.bubble.checked&&els.caption.value.trim())bubble(els.caption.value.trim(),p);working=false;status('POP! Klaar om te downloaden.');flash()},0)}
+function status(t){els.status.textContent=t}
+function base(){const w=1200,h=900;canvas.width=w;canvas.height=h;ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);const sc=Math.min(w/img.width,h/img.height),dw=img.width*sc,dh=img.height*sc;ctx.drawImage(img,(w-dw)/2,(h-dh)/2,dw,dh)}
+function palette(){if(els.palette.value==='random')return Array.from({length:6},()=>{const n=Math.floor(Math.random()*16777216);return '#'+n.toString(16).padStart(6,'0')});return palettes[els.palette.value]}
+function render(){if(!img||working)return;working=true;status('RATATATA… beeld wordt verwerkt.');requestAnimationFrame(()=>{try{base();const p=palette(),s=+els.strength.value/100,c=+els.contrast.value/100,lev=+els.levels.value,d=+els.dot.value;if(mode==='warhol')warhol(p,lev,c);else if(mode==='halftone')halftone(p,d,c);else if(mode==='poster')pixels(p,lev,c,false);else if(mode==='duotone')pixels([p[5],p[0],p[2]],3,c,false);else if(mode==='cmyk')cmyk(Math.round(20*s),c);else comic(p,d,lev,c,s);if(els.bubble.checked&&els.caption.value.trim())bubble(els.caption.value.trim(),p);status('POP! Klaar om te downloaden.');flash()}catch(err){console.error(err);status('Bewerkingsfout: '+err.message)}finally{working=false}},0)}
 function sourceData(){return ctx.getImageData(0,0,canvas.width,canvas.height)}
 function lum(r,g,b,c=1){return Math.max(0,Math.min(255,((.299*r+.587*g+.114*b)-128)*c+128))}
 function hex(h){h=h.replace('#','');if(h.length===3)h=[...h].map(x=>x+x).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]}
