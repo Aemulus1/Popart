@@ -62,15 +62,13 @@ els.drop.onclick=()=>els.file.click();els.file.onchange=e=>loadFile(e.target.fil
 function loadFile(f){if(!f||!f.type.startsWith('image/')){status('Kies een geldige afbeelding.');return}if(f.size>20*1024*1024){status('Afbeelding is groter dan 20 MB. Kies een kleiner bestand.');return}const u=URL.createObjectURL(f),im=new Image();im.onload=()=>{img=im;URL.revokeObjectURL(u);els.empty.hidden=true;status('Beeld geladen. De machine is klaar!');render()};im.onerror=()=>status('Deze afbeelding kon niet worden gelezen.');im.src=u}
 function status(t){els.status.textContent=t}
 function base(){
-  const maxSide=1400;
   const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
-  const scale=Math.min(1,maxSide/Math.max(iw,ih));
-  const w=Math.max(1,Math.round(iw*scale)), h=Math.max(1,Math.round(ih*scale));
+  const maxSide=1400, sc=Math.min(1,maxSide/Math.max(iw,ih));
+  const w=Math.max(1,Math.round(iw*sc)), h=Math.max(1,Math.round(ih*sc));
   canvas.width=w; canvas.height=h;
-  canvas.style.aspectRatio=w+' / '+h;
   const frame=canvas.closest('.frame');
-  if(frame){frame.style.aspectRatio=w+' / '+h;frame.style.width=(w>=h?'min(100%,920px)':'min(72vw,690px)')}
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
+  if(frame) frame.style.aspectRatio=w+' / '+h;
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
   ctx.drawImage(img,0,0,w,h);
 }
 function palette(){if(els.palette.value==='random')return Array.from({length:6},()=>`hsl(${Math.random()*360} 90% 55%)`);return palettes[els.palette.value]}
